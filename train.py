@@ -14,6 +14,10 @@ import time
 import argparse
 import numpy as np
 import torch
+# 修复: mem_efficient/flash SDPA 的 backward 在带 mask 输入(尤其 flip forward)下会 NaN,
+# 强制用 math 后端(数值稳定, 略慢)
+torch.backends.cuda.enable_flash_sdp(False)
+torch.backends.cuda.enable_mem_efficient_sdp(False)
 import torch.nn.functional as F
 from torch.amp import autocast
 from torch.nn.utils import clip_grad_norm_
@@ -130,8 +134,8 @@ def main():
             else:
                 p = min((global_step - warmup_steps) / max(total_steps - warmup_steps, 1), 1.0)
                 s = 0.5 * (1 + math.cos(math.pi * p))
-            for g in optimizer.param_groups:
-                g["lr"] = args.lr * s
+            for g, base in zip(optimizer.param_groups, (args.lr, args.lr_backbone)):
+                g["lr"] = base * s
 
             pv = batch["pixel_values"].to(device)
             pm = batch["pixel_mask"].to(device)

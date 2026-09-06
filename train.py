@@ -34,7 +34,9 @@ DATA_ROOT_DEFAULT = os.environ.get("DATA_ROOT") or (
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--epochs", type=int, default=40)
-    ap.add_argument("--lr", type=float, default=5e-5)
+    ap.add_argument("--lr", type=float, default=3e-5)
+    ap.add_argument("--lr-backbone", type=float, default=1e-5,
+                    help="backbone 学习率 (DETR 官方微调配方 backbone 用更低 lr, 防全量训练发散)")
     ap.add_argument("--warmup-frac", type=float, default=0.02,
                     help="余弦学习率预热的步数占总步数比例")
     ap.add_argument("--batch", type=int, default=1)
@@ -85,7 +87,13 @@ def main():
     total_steps = args.epochs * len(ds)
     warmup_steps = int(args.warmup_frac * total_steps)
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
+    # 参数分组: backbone 用更低 lr (官方 DETR 配方 backbone≈1e-5), 防训练后期发散
+    backbone_params = [p for n, p in model.named_parameters() if p.requires_grad and "backbone" in n]
+    head_params = [p for n, p in model.named_parameters() if p.requires_grad and "backbone" not in n]
+    optimizer = torch.optim.AdamW([
+        {"params": head_params, "lr": args.lr},
+        {"params": backbone_params, "lr": args.lr_backbone},
+    ], lr=args.lr, weight_decay=1e-4)
 
     # 断点续训
     os.makedirs(args.out, exist_ok=True)
@@ -94,7 +102,11 @@ def main():
     if args.resume and os.path.exists(ckpt_path):
         ck = torch.load(ckpt_path, map_location=device)
         model.load_state_dict(ck["model"])
-        optimizer.load_state_dict(ck["optimizer"])
+        ck_opt = ck.get("optimizer")
+        if ck_opt and len(ck_opt["param_groups"]) == len(optimizer.param_groups):
+            optimizer.load_state_dict(ck_opt)
+        else:
+            print("[RESUME] optimizer 参数组与当前不匹配, 丢弃 optimizer 状态 (只用模型权重)")
         resume_step = ck.get("global_step", 0)
         print(f"[RESUME] from global_step {resume_step}")
 
@@ -158,9 +170,11 @@ def main():
                         step_layout = l_layout.item()
                         step_sym = l_sym.item()
                     else:
-                        print(f"WARNING: NaN grad at step{global_step}, skip")
+                        print(f"WARNING: NaN grad at step{global_step}, skip "
+                              f"(detr={total.item():.3f} layout={l_layout.item():.4f} sym={l_sym.item():.4f})")
                 else:
-                    print(f"WARNING: non-finite loss at step{global_step}, skip")
+                    print(f"WARNING: non-finite loss at step{global_step}, skip "
+                          f"(detr={total.item():.3f} layout={l_layout.item():.4f} sym={l_sym.item():.4f})")
             except (ValueError, RuntimeError) as e:
                 print(f"WARNING: step{global_step} error, skip: {str(e)[:80]}")
 

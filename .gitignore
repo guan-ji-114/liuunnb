@@ -1,0 +1,14 @@
+# PyCharm
+.idea/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# 预训练权重 (166MB, 超过 GitHub 100MB 限制; AutoDL 上由 setup_autodl.sh 下载)
+weights/
+
+# 训练产物 (checkpoint / 日志)
+runs/
+*.pt
+*.log

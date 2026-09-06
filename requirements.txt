@@ -1,0 +1,7 @@
+# DETR 下肢力线检测依赖
+# PyTorch / torchvision 由 AutoDL 镜像提供, 不要在此安装 (避免 CUDA 冲突)
+transformers==5.15.1
+timm==1.0.28
+torchmetrics==1.9.0
+faster-coco-eval==1.7.2
+opencv-python-headless

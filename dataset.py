@@ -20,7 +20,11 @@ class DetrDataset(Dataset):
         self.lbl_dir = Path(lbl_dir)
         self.processor = processor
         self.cache_dir = Path(cache_dir) if cache_dir else None
-        files = sorted([p.stem for p in self.img_dir.glob("*.bmp")])
+        # 文件清单优先从缓存目录列 (AutoDL 只传了 cache 的 .jpg, 没有原始 .bmp)
+        if self.cache_dir and self.cache_dir.exists():
+            files = sorted([p.stem for p in self.cache_dir.glob("*.jpg")])
+        else:
+            files = sorted([p.stem for p in self.img_dir.glob("*.bmp")])
         # 过滤空标注(0框)图: 否则 boxes 张量变 1D, DETR 匈牙利匹配 cdist 崩溃
         files = [f for f in files
                  if any(l.strip() for l in (self.lbl_dir / f"{f}.txt").read_text().splitlines())]

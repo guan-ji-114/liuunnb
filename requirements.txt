@@ -5,3 +5,4 @@ timm==1.0.28
 torchmetrics==1.9.0
 faster-coco-eval==1.7.2
 opencv-python-headless
+scipy

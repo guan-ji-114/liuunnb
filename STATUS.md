@@ -81,6 +81,7 @@ python -u evaluate.py --ckpt runs/full/model_final.pt --out runs/eval
 7. **空标注图崩溃**: 数据集有 0 框的空 txt (train 2 张, val 4 张), 空 boxes → `torch.tensor([])` 变 1D `(0,)`, DETR 匈牙利匹配 `torch.cdist` 报 "X2 got: 1D"。修复: dataset.py 过滤空标注图 + boxes `reshape(-1,4)`
 8. **训练 NaN (最终根因)**: **bf16 精度太低** — GIoU 梯度算 `1/union` 时 union 下溢成 0 → `inf×0=NaN`, 损失有限但梯度 NaN, 一旦进入持续 NaN(卡死, 99% 步跳过)。fp16 也有(10位mantissa, 但 LayerNorm 溢出)。**修复: 用 fp32**(默认, 24位mantissa)。曾误判为 fp16 溢出/缺梯度裁剪, 梯度裁剪(0.1)+NaN步跳过+try/except 是必要保护但治标不治本。
 9. **bf16 卡死教训**: NaN grad 步跳过只是防止权重污染, 但如果 NaN 持续(bf16 固有问题), 模型冻结不更新, 白跑 9 小时。诊断方法: 统计日志里 WARNING 占比。
+10. **fp32 全量 40ep 也发散 (2026-09-06 AutoDL)**: 验证集 200×10ep 干净, 但全量 4673×40ep 在 **ep15 step71450 起持续 NaN**(永久发散, 非单样本触发)。根因 = **train.py 无 LR 调度**, 恒定 lr=5e-5 跑满 40ep, DETR box 头(GIoU 含 `1/union`)后期梯度爆炸。验证只跑 10ep 恰好没越过发散点(~ep15)。**修复: cosine+预热调度 + 连续 200 NaN 自动停机 + NaN 时不覆盖 checkpoint**。结论: bf16 是必要非充分, fp32 + 无调度照样会发散。
 
 ## 九、进度 (2026-08-23 更新)
 
@@ -113,4 +114,5 @@ python -u evaluate.py --ckpt runs/full/model_final.pt --out runs/eval
   - 全量 checkpoint `runs/full/checkpoint.pt` (498MB, step 33210) 若要续训一并传
 - 上机顺序: `bash setup_autodl.sh` → 小样本验证 → `bash run_train.sh`
 - 评估可下回本地跑 `evaluate.py` (本地有 BMP), 或传 BMP 上 AutoDL 跑
+- **2026-09-06 进度**: 4090 全量 40ep 已跑到 ep15 step71450 发散(见踩坑10)。干净 checkpoint 在 **step71000** (step71495 手动 Ctrl+C 未跨过 71500 保存点)。续训流程: ① git pull 最新 train.py(已加调度+停机) → ② 校验 `checkpoint.pt` 权重非 NaN(命令见下) → ③ `bash run_train.sh`(自动 `--resume`)。
 
